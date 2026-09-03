@@ -3,6 +3,10 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -13,6 +17,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: npm install
       - uses: tauri-apps/tauri-action@v0
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -22,3 +27,11 @@ jobs:
           args: '--bundles nsis'
           releaseDraft: true
           prerelease: false
+      - run: npm run tauri build -- --bundles nsis
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        with:
+          name: youzan-order-sync-windows
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
