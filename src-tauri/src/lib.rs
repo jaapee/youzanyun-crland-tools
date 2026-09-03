@@ -1,7 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const CLIENT_ID: &str = "ee445730e670364ae0";
 const CLIENT_SECRET: &str = "c6642ef7936f94c53d1bbf5635803acb";
@@ -25,6 +24,7 @@ pub struct Order {
     pub status_str: Option<String>,
     pub payment: Option<f64>,
     pub created: Option<String>,
+    pub update_time: Option<String>,
     pub receiver_name: Option<String>,
     pub receiver_phone: Option<String>,
     pub mixc_order_id: Option<String>,
@@ -178,6 +178,27 @@ mod commands {
             .as_array()
             .map(|items| items.iter().any(|item| flag(Some(item), key)))
             .unwrap_or(false)
+    }
+    fn sale_payload(raw: &serde_json::Value) -> serde_json::Value {
+        let mut sale = raw.clone();
+        let full = if sale.get("full_order_info").is_some() {
+            sale.get_mut("full_order_info").expect("checked above")
+        } else {
+            &mut sale
+        };
+        let info = if full.get("order_info").is_some() {
+            full.get_mut("order_info").expect("checked above")
+        } else {
+            full
+        };
+        if let Some(object) = info.as_object_mut() {
+            object.insert(
+                "order_tags".into(),
+                serde_json::json!({"is_payed": true, "is_refund": false}),
+            );
+            object.insert("refund_state".into(), serde_json::Value::from(0));
+        }
+        sale
     }
     fn save_error(message: &str) {
         if let Ok(c) = connection() {
@@ -366,7 +387,7 @@ mod commands {
         let c = connection()?;
         let search = search.unwrap_or_default();
         let pattern = format!("%{}%", search);
-        let mut s = c.prepare("SELECT tid,status,status_str,payment,created,receiver_name,receiver_phone,mixc_order_id,mixc_refund_order_id FROM orders WHERE ?1='' OR tid LIKE ?2 OR mixc_order_id LIKE ?2 OR mixc_refund_order_id LIKE ?2 ORDER BY created DESC LIMIT ?3 OFFSET ?4").map_err(|e| e.to_string())?;
+        let mut s = c.prepare("SELECT tid,status,status_str,payment,created,update_time,receiver_name,receiver_phone,mixc_order_id,mixc_refund_order_id FROM orders WHERE ?1='' OR tid LIKE ?2 OR mixc_order_id LIKE ?2 OR mixc_refund_order_id LIKE ?2 ORDER BY created DESC LIMIT ?3 OFFSET ?4").map_err(|e| e.to_string())?;
         let rows = s
             .query_map(params![search, pattern, page_size, offset], |r| {
                 Ok(Order {
@@ -375,10 +396,11 @@ mod commands {
                     status_str: r.get(2)?,
                     payment: r.get(3)?,
                     created: r.get(4)?,
-                    receiver_name: r.get(5)?,
-                    receiver_phone: r.get(6)?,
-                    mixc_order_id: r.get(7)?,
-                    mixc_refund_order_id: r.get(8)?,
+                    update_time: r.get(5)?,
+                    receiver_name: r.get(6)?,
+                    receiver_phone: r.get(7)?,
+                    mixc_order_id: r.get(8)?,
+                    mixc_refund_order_id: r.get(9)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -501,16 +523,12 @@ mod commands {
             return list_orders(Some(1), Some(20), None);
         }
         let token = get_token().await?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| e.to_string())?
-            .as_secs() as i64;
-        let end = chrono::DateTime::from_timestamp(now, 0)
-            .ok_or("时间错误")?
+        let end_time = chrono::Local::now();
+        let start_time = end_time - chrono::Duration::hours(48);
+        let end = end_time
             .format("%Y-%m-%d %H:%M:%S")
             .to_string();
-        let start = chrono::DateTime::from_timestamp(now - 48 * 3600, 0)
-            .ok_or("时间错误")?
+        let start = start_time
             .format("%Y-%m-%d %H:%M:%S")
             .to_string();
         let client = reqwest::Client::new();
@@ -585,7 +603,22 @@ mod commands {
                             )
                             .map_err(|e| e.to_string())?;
                     }
-                    match push_order(&client, &item, mixc_id, refund_id, attempts).await {
+                    let mut sale_id = mixc_id;
+                    if refunded && sale_id.is_none() && attempts < 3 {
+                        println!("[万象城] 退款单缺少销售单，先补推销售单：{}", tid);
+                        match push_order(&client, &sale_payload(&item), None, None, 0).await {
+                            Ok(Some((sale_tid, sale_amount, pushed_id, request, response))) => {
+                                connection()?.execute("UPDATE orders SET mixc_sent_amount=?1,mixc_order_id=?2,mixc_push_success=1,mixc_request=?3,mixc_response=?4 WHERE tid=?5", params![sale_amount, pushed_id, request, response, sale_tid]).map_err(|e| e.to_string())?;
+                                sale_id = Some(pushed_id);
+                            }
+                            Err((request, error)) => {
+                                connection()?.execute("UPDATE orders SET mixc_push_success=0,mixc_request=?1,mixc_response=?2 WHERE tid=?3", params![request, error, tid]).map_err(|e| e.to_string())?;
+                                println!("[万象城] 对应销售单推送失败，暂不推送退款单");
+                            }
+                            Ok(None) => {}
+                        }
+                    }
+                    match push_order(&client, &item, sale_id, refund_id, attempts).await {
                         Err((request, error)) => {
                             let sql = if refunded {
                                 "UPDATE orders SET mixc_refund_push_success=0,mixc_refund_request=?1,mixc_refund_response=?2 WHERE tid=?3"
