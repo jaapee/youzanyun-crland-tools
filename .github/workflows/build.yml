@@ -19,5 +19,6 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: '有赞订单同步 ${{ github.ref_name }}'
           releaseBody: 'Windows 安装包'
+          args: '--bundles nsis'
           releaseDraft: true
           prerelease: false
