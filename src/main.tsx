@@ -5,6 +5,7 @@ import './styles.css';
 
 type Order = { tid: string; status?: string; status_str?: string; payment?: number; created?: string; update_time?: string; mixc_order_id?: string; mixc_refund_order_id?: string };
 const PAGE_SIZE = 20;
+const SYNC_INTERVAL_MS = 15 * 60 * 1000;
 const LAST_AVAILABLE_DATE = '2026-09-15';
 
 function hasExpired() {
@@ -14,13 +15,13 @@ function hasExpired() {
 }
 
 export default function App() {
-  const [orders, setOrders] = useState<Order[]>([]); const [total, setTotal] = useState(0); const [page, setPage] = useState(1); const [search, setSearch] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [nextSyncAt, setNextSyncAt] = useState(Date.now() + 120000); const busyRef = useRef(false);
+  const [orders, setOrders] = useState<Order[]>([]); const [total, setTotal] = useState(0); const [page, setPage] = useState(1); const [search, setSearch] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [nextSyncAt, setNextSyncAt] = useState(Date.now() + SYNC_INTERVAL_MS); const busyRef = useRef(false);
   const load = async (targetPage = page, targetSearch = search) => { if (hasExpired()) return; try { const result = await invoke<Order[]>('list_orders', { page: targetPage, page_size: PAGE_SIZE, search: targetSearch || null }); setOrders(result); setTotal(targetSearch ? result.length : await invoke<number>('count_orders')); } catch (e) { setError(String(e)); } };
-  const sync = async () => { if (hasExpired() || busyRef.current) return; busyRef.current = true; setBusy(true); setError(null); try { await invoke('sync_recent_orders'); setPage(1); await load(1); } catch (e) { setError(String(e)); } finally { busyRef.current = false; setBusy(false); setNextSyncAt(Date.now() + 120000); } };
+  const sync = async () => { if (hasExpired() || busyRef.current) return; busyRef.current = true; setBusy(true); setError(null); try { await invoke('sync_recent_orders'); setPage(1); await load(1); } catch (e) { setError(String(e)); } finally { busyRef.current = false; setBusy(false); setNextSyncAt(Date.now() + SYNC_INTERVAL_MS); } };
   const nextSyncText = new Date(nextSyncAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   useEffect(() => {
     if (hasExpired()) return;
-    load(1); sync(); const timer = window.setInterval(sync, 120000); return () => window.clearInterval(timer);
+    load(1); sync(); const timer = window.setInterval(sync, SYNC_INTERVAL_MS); return () => window.clearInterval(timer);
   }, []);
   if (hasExpired()) return null;
   return <main><div className="sync-status" role={error ? 'alert' : undefined}><span>{busy ? '正在同步…' : `下一次同步时间：${nextSyncText}`}</span>{error && <span>有赞接口报错，本次任务停止，等下个时间点继续执行：{error}</span>}</div><section className="card"><div className="search-bar"><input value={search} placeholder="输入有赞单号或万象城销售/退款单号" onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { setPage(1); load(1, search); } }} /><button onClick={() => { setPage(1); load(1, search); }}>查询</button></div><div className="section-title"><h2>订单列表</h2><span>{total} 条</span></div>{orders.length === 0 ? <div className="empty">暂无订单。</div> : <><div className="table-wrap"><table><thead><tr><th>订单号</th><th>万象城销售单号</th><th>万象城退款单号</th><th>状态</th><th>金额</th><th>更新时间</th><th>创建时间</th></tr></thead><tbody>{orders.map(o => <tr key={o.tid}><td>{o.tid}</td><td>{o.mixc_order_id || '-'}</td><td>{o.mixc_refund_order_id || '-'}</td><td><span className="status">{o.status_str || '-'}</span></td><td>{o.payment == null ? '-' : `¥${o.payment.toFixed(2)}`}</td><td>{o.update_time || '-'}</td><td>{o.created || '-'}</td></tr>)}</tbody></table></div><div className="pagination"><button disabled={page <= 1} onClick={() => { const p = page - 1; setPage(p); load(p, search); }}>上一页</button><span>{page} / {pageCount}</span><button disabled={page >= pageCount} onClick={() => { const p = page + 1; setPage(p); load(p, search); }}>下一页</button></div></>}</section></main>;

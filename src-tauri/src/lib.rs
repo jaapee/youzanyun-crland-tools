@@ -5,15 +5,15 @@ use std::path::PathBuf;
 const CLIENT_ID: &str = "ee445730e670364ae0";
 const CLIENT_SECRET: &str = "c6642ef7936f94c53d1bbf5635803acb";
 const GRANT_ID: &str = "180198027";
-const MIXC_URL: &str = "http://ztopenapiuat.crland.com.cn:81/api-gateway/rs-service/";
+const MIXC_URL: &str = "http://ztopenapi.crland.com.cn/api-gateway/rs-service/";
 const MIXC_API_ID: &str = "mixc.imPOSWBJB.GLWXCJB.orderCollect";
-const MIXC_VERSION: &str = "1.0.0";
-const MIXC_APP_SUB_ID: &str = "10000133334PY";
-const MIXC_APP_TOKEN: &str = "c861e8a4be0f41b182abdb55b986444a";
-const MIXC_APP_PUB_ID: &str = "10000133301US";
-const MIXC_PARTNER_ID: &str = "70000006";
-const MIXC_SYS_ID: &str = "100001333";
-const MIXC_SIGN_KEY: &str = "0bca40d57d1f44208d787a4e0a87957d";
+const MIXC_VERSION: &str = "1.0.1";
+const MIXC_APP_SUB_ID: &str = "10000187223DJ";
+const MIXC_APP_TOKEN: &str = "cb4320b278784971a30e857397d8ebec";
+const MIXC_APP_PUB_ID: &str = "10000187223RL";
+const MIXC_PARTNER_ID: &str = "70000029";
+const MIXC_SYS_ID: &str = "100001872";
+const MIXC_SIGN_KEY: &str = "434ee8dccffb4bc6b50870af33d2d881";
 const PAUSE_YOUZAN_SYNC: bool = false;
 const PAUSE_MIXC_PUSH: bool = false;
 const MIXC_TEST_TID: &str = "E20260902115917052500001";
@@ -282,7 +282,7 @@ mod commands {
         } else {
             tid.clone()
         };
-        let mut request_data = serde_json::json!({"cashierId":"20028hvgl120n0101","checkCode":"p88888888","itemList":[],"mall":"20028","orderId":order_id,"payList":[{"discountAmt":target,"payAmt":target,"paymentMethod":"CH","time":now,"value":target}],"source":"01","store":"HVGL120N01","tillId":"01","time":now,"totalAmt":target,"type":if refunded {"ONLINEREFUND"} else {"SALE"}});
+        let mut request_data = serde_json::json!({"cashierId":"20028hvgb110n0201","checkcode":"p88888888","itemList":[],"mall":"20028","orderId":order_id,"payList":[{"discountAmt":target,"payAmt":target,"paymentMethod":"CH","time":now,"value":target}],"source":"01","store":"HVGB110N02","tillId":"01","time":now,"totalAmt":target,"type":if refunded {"ONLINEREFUND"} else {"SALE"}});
         if refunded {
             request_data["refOrderId"] = serde_json::Value::String(tid.clone());
         }
